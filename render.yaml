@@ -1,0 +1,25 @@
+databases:
+  - name: catalogo-plantas-db
+    plan: free
+    databaseName: catalago_plantas
+    user: postgres_user
+
+services:
+  - type: web
+    plan: free
+    name: catalogo-plantas-backend
+    runtime: python
+    buildCommand: './build.sh'
+    # Ejecuta la aplicación usando Gunicorn + Uvicorn en el entorno Linux de Render
+    startCommand: 'python -m gunicorn backend.asgi:application -k uvicorn.workers.UvicornWorker' 
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: catalogo-plantas-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: WEB_CONCURRENCY
+        value: 4
+      - key: DEBUG
+        value: 'False'

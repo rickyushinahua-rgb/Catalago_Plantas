@@ -57,8 +57,8 @@ export default function App() {
     setCargando(true);
     try {
       const [resPlantas, resTipos] = await Promise.all([
-        fetch('http://127.0.0.1:8000/api/plantas/'),
-        fetch('http://127.0.0.1:8000/api/tipos-planta/'),
+        fetch('https://catalogo-plantas-backend.onrender.com/api/plantas/'),
+        fetch('https://catalogo-plantas-backend.onrender.com/api/tipos-planta/'),
       ]);
       if (resPlantas.ok) setPlantas(await resPlantas.json());
       if (resTipos.ok) setTiposPlanta(await resTipos.json());
@@ -152,8 +152,8 @@ export default function App() {
   }
 
   const url = idPlantaEditar
-    ? `http://127.0.0.1:8000/api/plantas/${idPlantaEditar}/`
-    : 'http://127.0.0.1:8000/api/plantas/';
+    ? `https://catalogo-plantas-backend.onrender.com/api/plantas/${idPlantaEditar}/`
+    : 'https://catalogo-plantas-backend.onrender.com/api/plantas/';
     
   // CAMBIO CLAVE: Usamos PATCH en lugar de PUT para la actualización con FormData
   const method = idPlantaEditar ? 'PATCH' : 'POST';
@@ -193,7 +193,7 @@ export default function App() {
 
   const eliminarPlanta = async (id) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/plantas/${id}/`, { method: 'DELETE' });
+      const res = await fetch(`https://catalogo-plantas-backend.onrender.com/api/plantas/${id}/`, { method: 'DELETE' });
       if (res.ok) {
         cargarDatos();
         mostrarNotificacion('Planta eliminada', 'exito');
@@ -230,8 +230,8 @@ export default function App() {
       codigo_categoria: codigoCategoria,
     };
     const url = idTipoEditar
-      ? `http://127.0.0.1:8000/api/tipos-planta/${idTipoEditar}/`
-      : 'http://127.0.0.1:8000/api/tipos-planta/';
+      ? `https://catalogo-plantas-backend.onrender.com/api/tipos-planta/${idTipoEditar}/`
+      : 'https://catalogo-plantas-backend.onrender.com/api/tipos-planta/';
     const method = idTipoEditar ? 'PUT' : 'POST';
 
     try {
@@ -271,7 +271,7 @@ export default function App() {
 
   const eliminarTipoPlanta = async (id) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/tipos-planta/${id}/`, { method: 'DELETE' });
+      const res = await fetch(`https://catalogo-plantas-backend.onrender.com/api/tipos-planta/${id}/`, { method: 'DELETE' });
       if (res.ok) {
         cargarDatos();
         mostrarNotificacion('Tipo eliminado', 'exito');

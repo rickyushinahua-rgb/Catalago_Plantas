@@ -23,9 +23,8 @@ export default function App() {
   const [cuidados, setCuidados] = useState('');
   const [precio, setPrecio] = useState('');
   const [tipoPlantaSeleccionado, setTipoPlantaSeleccionado] = useState('');
-  const [previewImagen, setPreviewImagen] = useState('');
-  const [imagenCargada, setImagenCargada] = useState(false); // ✅ Nuevo: saber si cargó bien
-  const [imagenError, setImagenError] = useState(false); // ✅ Nuevo: saber si falló
+  const [archivoImagen, setArchivoImagen] = useState(null);
+  const [previewImagen, setPreviewImagen] = useState(null);
 
   // ========================================
   // ESTADOS FORMULARIO TIPO
@@ -56,10 +55,13 @@ export default function App() {
     }
   }, [notificacion]);
 
-  // ✅ Resetear estados de imagen cuando cambia la URL
+  // Limpiar URL de preview al desmontar
   useEffect(() => {
-    setImagenCargada(false);
-    setImagenError(false);
+    return () => {
+      if (previewImagen && previewImagen.startsWith('blob:')) {
+        URL.revokeObjectURL(previewImagen);
+      }
+    };
   }, [previewImagen]);
 
   const cargarDatos = async () => {
@@ -83,23 +85,6 @@ export default function App() {
   // ========================================
   const mostrarNotificacion = (mensaje, tipo = 'exito') => {
     setNotificacion({ mensaje, tipo, id: Date.now() });
-  };
-
-  // ========================================
-  // PEGAR IMAGEN DESDE PORTAPAPELES
-  // ========================================
-  const pegarDesdePortapapeles = async () => {
-    try {
-      const texto = await navigator.clipboard.readText();
-      if (texto && (texto.startsWith('http://') || texto.startsWith('https://'))) {
-        setPreviewImagen(texto);
-        mostrarNotificacion('URL pegada correctamente', 'exito');
-      } else {
-        mostrarNotificacion('El portapapeles no contiene una URL válida', 'error');
-      }
-    } catch (err) {
-      mostrarNotificacion('No se pudo acceder al portapapeles', 'error');
-    }
   };
 
   // ========================================
@@ -130,6 +115,11 @@ export default function App() {
   // CRUD PLANTAS
   // ========================================
   const abrirFormularioPlanta = (planta = null) => {
+    // Limpiar URL anterior si es blob
+    if (previewImagen && previewImagen.startsWith('blob:')) {
+      URL.revokeObjectURL(previewImagen);
+    }
+
     if (planta) {
       setIdPlantaEditar(planta.id);
       setNombreComun(planta.nombre_comun);
@@ -137,7 +127,8 @@ export default function App() {
       setCuidados(planta.cuidados);
       setPrecio(planta.precio);
       setTipoPlantaSeleccionado(planta.tipo_planta);
-      setPreviewImagen(planta.imagen || '');
+      setPreviewImagen(planta.imagen || null);
+      setArchivoImagen(null);
     } else {
       setIdPlantaEditar(null);
       setNombreComun('');
@@ -145,26 +136,53 @@ export default function App() {
       setCuidados('');
       setPrecio('');
       setTipoPlantaSeleccionado(tiposPlanta[0]?.id || '');
-      setPreviewImagen('');
+      setPreviewImagen(null);
+      setArchivoImagen(null);
     }
-    setImagenCargada(false);
-    setImagenError(false);
     setMostrarModalPlanta(true);
+  };
+
+  const manejarCambioImagen = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validar que sea imagen
+      if (!file.type.startsWith('image/')) {
+        mostrarNotificacion('El archivo debe ser una imagen', 'error');
+        return;
+      }
+      // Validar tamaño (máx 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        mostrarNotificacion('La imagen no debe superar los 5MB', 'error');
+        return;
+      }
+
+      // Limpiar URL anterior
+      if (previewImagen && previewImagen.startsWith('blob:')) {
+        URL.revokeObjectURL(previewImagen);
+      }
+
+      setArchivoImagen(file);
+      setPreviewImagen(URL.createObjectURL(file));
+    }
   };
 
   const guardarPlanta = async (e) => {
     e.preventDefault();
 
-    const payload = {
-      nombre_comun: nombreComun.trim(),
-      cuidados: cuidados.trim(),
-      precio: parseFloat(precio),
-      tipo_planta: parseInt(tipoPlantaSeleccionado),
-      imagen: previewImagen.trim() || null,
-    };
+    // Crear FormData para enviar archivo
+    const formData = new FormData();
+    formData.append('nombre_comun', nombreComun.trim());
+    formData.append('cuidados', cuidados.trim());
+    formData.append('precio', parseFloat(precio));
+    formData.append('tipo_planta', parseInt(tipoPlantaSeleccionado));
 
     if (especieCientifica && especieCientifica.trim() !== '') {
-      payload.especie_cientifica = especieCientifica.trim();
+      formData.append('especie_cientifica', especieCientifica.trim());
+    }
+
+    // Solo agregar imagen si se seleccionó un archivo nuevo
+    if (archivoImagen) {
+      formData.append('imagen', archivoImagen);
     }
 
     const url = idPlantaEditar
@@ -174,12 +192,10 @@ export default function App() {
     const method = idPlantaEditar ? 'PATCH' : 'POST';
 
     try {
+      // NO poner Content-Type, el navegador lo hace automáticamente con boundary
       const res = await fetch(url, {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+        body: formData,
       });
 
       if (res.ok) {
@@ -212,13 +228,21 @@ export default function App() {
 
   const eliminarPlanta = async (id) => {
     try {
-      const res = await fetch(`https://catalogo-plantas-backend.onrender.com/api/plantas/${id}/`, { method: 'DELETE' });
-      if (res.ok) {
+      const res = await fetch(`https://catalogo-plantas-backend.onrender.com/api/plantas/${id}/`, { 
+        method: 'DELETE' 
+      });
+      
+      if (res.ok || res.status === 204) {
         cargarDatos();
         mostrarNotificacion('Planta eliminada', 'exito');
+      } else if (res.status === 404) {
+        mostrarNotificacion('La planta ya no existe', 'error');
+        cargarDatos(); // Recargar para sincronizar
+      } else {
+        mostrarNotificacion('Error al eliminar la planta', 'error');
       }
     } catch (err) {
-      mostrarNotificacion('Error al eliminar', 'error');
+      mostrarNotificacion('Error de conexión al eliminar', 'error');
     }
     setModalConfirmar(null);
   };
@@ -290,10 +314,15 @@ export default function App() {
 
   const eliminarTipoPlanta = async (id) => {
     try {
-      const res = await fetch(`https://catalogo-plantas-backend.onrender.com/api/tipos-planta/${id}/`, { method: 'DELETE' });
-      if (res.ok) {
+      const res = await fetch(`https://catalogo-plantas-backend.onrender.com/api/tipos-planta/${id}/`, { 
+        method: 'DELETE' 
+      });
+      if (res.ok || res.status === 204) {
         cargarDatos();
         mostrarNotificacion('Tipo eliminado', 'exito');
+      } else if (res.status === 404) {
+        mostrarNotificacion('El tipo ya no existe', 'error');
+        cargarDatos();
       } else {
         mostrarNotificacion('No se puede eliminar: tiene plantas asociadas', 'error');
       }
@@ -510,104 +539,26 @@ export default function App() {
             ) : vistaGrid ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {plantasFiltradas.map((planta, idx) => (
-                  <div
+                  <PlantaCard
                     key={planta.id}
-                    className="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
-                    style={{ animation: `fadeInUp 0.4s ease-out ${idx * 0.05}s both` }}
-                  >
-                    <div className="h-48 bg-gradient-to-br from-emerald-100 to-teal-100 relative overflow-hidden">
-                      {planta.imagen ? (
-                        <img
-                          src={planta.imagen}
-                          alt={planta.nombre_comun}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                            e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center text-emerald-300 text-6xl">🌿</div>';
-                          }}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-emerald-300 text-6xl">🌿</div>
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                      <span className="absolute top-3 left-3 bg-white/95 backdrop-blur text-emerald-800 font-semibold text-xs px-3 py-1 rounded-full shadow-sm flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                        {planta.tipo_planta_nombre}
-                      </span>
-                    </div>
-                    <div className="p-5">
-                      <h4 className="font-bold text-lg text-gray-800 line-clamp-1 mb-0.5">{planta.nombre_comun}</h4>
-                      <p className="text-xs text-gray-400 italic mb-3 line-clamp-1">{planta.especie_cientifica || 'Sin especie asignada'}</p>
-                      <p className="text-gray-600 text-sm line-clamp-2 mb-4 min-h-[2.5rem]">{planta.cuidados}</p>
-                      <div className="flex justify-between items-center pt-3 border-t border-gray-100">
-                        <span className="text-xl font-black bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                          ${parseFloat(planta.precio).toFixed(2)}
-                        </span>
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => abrirFormularioPlanta(planta)}
-                            className="p-2 bg-gray-100 text-gray-600 hover:bg-emerald-500 hover:text-white rounded-lg transition"
-                            title="Editar"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => solicitarEliminarPlanta(planta)}
-                            className="p-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg transition"
-                            title="Eliminar"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                    planta={planta}
+                    idx={idx}
+                    onEditar={abrirFormularioPlanta}
+                    onEliminar={solicitarEliminarPlanta}
+                  />
                 ))}
               </div>
             ) : (
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="divide-y divide-gray-100">
                   {plantasFiltradas.map((planta, idx) => (
-                    <div
+                    <PlantaListItem
                       key={planta.id}
-                      className="flex items-center gap-4 p-4 hover:bg-emerald-50/30 transition group"
-                      style={{ animation: `fadeInUp 0.3s ease-out ${idx * 0.03}s both` }}
-                    >
-                      <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-emerald-100 to-teal-100 overflow-hidden flex-shrink-0">
-                        {planta.imagen ? (
-                          <img src={planta.imagen} alt={planta.nombre_comun} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-2xl">🌿</div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-gray-800 truncate">{planta.nombre_comun}</h4>
-                        <p className="text-xs text-gray-400 italic truncate">{planta.especie_cientifica || 'Sin especie'}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{planta.tipo_planta_nombre}</span>
-                          <span className="text-xs text-gray-400 line-clamp-1">{planta.cuidados}</span>
-                        </div>
-                      </div>
-                      <span className="text-lg font-black text-emerald-600 hidden sm:block">
-                        ${parseFloat(planta.precio).toFixed(2)}
-                      </span>
-                      <div className="flex gap-1.5">
-                        <button onClick={() => abrirFormularioPlanta(planta)} className="p-2 bg-gray-100 text-gray-600 hover:bg-emerald-500 hover:text-white rounded-lg transition">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        <button onClick={() => solicitarEliminarPlanta(planta)} className="p-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg transition">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
+                      planta={planta}
+                      idx={idx}
+                      onEditar={abrirFormularioPlanta}
+                      onEliminar={solicitarEliminarPlanta}
+                    />
                   ))}
                 </div>
               </div>
@@ -709,98 +660,63 @@ export default function App() {
                 />
               </div>
 
-              {/* ✅ CAMPO DE IMAGEN MEJORADO */}
+              {/* ✅ CAMPO DE IMAGEN CON FILE UPLOAD */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">
-                  🖼️ URL de la Imagen
+                  🖼️ Imagen de la Planta
                 </label>
                 
-                {/* Input con botón de pegar */}
-                <div className="flex gap-2 mb-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="url"
-                      placeholder="https://images.unsplash.com/..."
-                      value={previewImagen}
-                      onChange={(e) => setPreviewImagen(e.target.value)}
-                      className="w-full px-3 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition shadow-sm"
-                    />
-                    {previewImagen && (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewImagen('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition p-1"
-                        title="Limpiar"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={pegarDesdePortapapeles}
-                    className="px-3 py-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-xl transition flex items-center gap-1.5 text-sm font-medium whitespace-nowrap"
-                    title="Pegar desde portapapeles"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                    </svg>
-                    <span className="hidden sm:inline">Pegar</span>
-                  </button>
-                </div>
+                {/* Input file oculto */}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={manejarCambioImagen}
+                  className="hidden"
+                  id="input-imagen"
+                />
 
-                {/* Estado de la imagen */}
-                {previewImagen && (
-                  <div className={`border rounded-xl p-3 ${
-                    imagenError 
-                      ? 'border-red-200 bg-red-50' 
-                      : imagenCargada 
-                        ? 'border-emerald-200 bg-emerald-50' 
-                        : 'border-gray-100 bg-gray-50'
-                  }`}>
-                    {!imagenError && !imagenCargada && (
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-                        <span>Cargando imagen...</span>
+                {/* Área de drop / preview */}
+                <label 
+                  htmlFor="input-imagen"
+                  className="block cursor-pointer border-2 border-dashed border-gray-300 hover:border-emerald-500 rounded-xl p-4 transition bg-gray-50 hover:bg-emerald-50/30"
+                >
+                  {previewImagen ? (
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <img
+                          src={previewImagen}
+                          alt="Preview"
+                          className="w-full h-40 object-cover rounded-lg"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setArchivoImagen(null);
+                            setPreviewImagen(null);
+                          }}
+                          className="absolute top-2 right-2 bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center hover:bg-red-600 transition shadow-lg text-xs font-bold"
+                        >
+                          ✕
+                        </button>
                       </div>
-                    )}
-                    
-                    {imagenError && (
-                      <div className="flex items-center gap-2 text-sm text-red-600">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span>La URL no es válida o la imagen no se puede cargar</span>
-                      </div>
-                    )}
-                    
-                    {imagenCargada && (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          <span>Imagen cargada correctamente</span>
-                        </div>
-                        <div className="relative">
-                          <img
-                            src={previewImagen}
-                            alt="Preview"
-                            className="w-full h-40 object-cover rounded-lg border border-emerald-200"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {!previewImagen && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    💡 Pega una URL de imagen de Unsplash, Pixabay, Imgur, etc.
-                  </p>
-                )}
+                      <p className="text-xs text-center text-gray-500">
+                        {archivoImagen 
+                          ? `📎 ${archivoImagen.name} (${(archivoImagen.size / 1024).toFixed(1)} KB)`
+                          : '🖼️ Imagen actual (click para cambiar)'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-4 text-gray-500">
+                      <svg className="w-10 h-10 mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p className="text-sm font-medium">Click para seleccionar imagen</p>
+                      <p className="text-xs mt-1">JPG, PNG o GIF (máx 5MB)</p>
+                    </div>
+                  )}
+                </label>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
@@ -904,16 +820,113 @@ export default function App() {
   );
 }
 
-// ✅ Componente de imagen con manejo de carga
-function ImagenPreview({ src, onLoad, onError }) {
+// ✅ Componente separado para Card de Planta - evita el error de React
+function PlantaCard({ planta, idx, onEditar, onEliminar }) {
+  const [imgError, setImgError] = useState(false);
+
   return (
-    <img
-      src={src}
-      alt="Preview"
-      onLoad={onLoad}
-      onError={onError}
-      style={{ display: 'none' }}
-    />
+    <div
+      className="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+      style={{ animation: `fadeInUp 0.4s ease-out ${idx * 0.05}s both` }}
+    >
+      <div className="h-48 bg-gradient-to-br from-emerald-100 to-teal-100 relative overflow-hidden">
+        {planta.imagen && !imgError ? (
+          <img
+            src={planta.imagen}
+            alt={planta.nombre_comun}
+            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-emerald-300 text-6xl">
+            🌿
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+        <span className="absolute top-3 left-3 bg-white/95 backdrop-blur text-emerald-800 font-semibold text-xs px-3 py-1 rounded-full shadow-sm flex items-center gap-1">
+          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+          {planta.tipo_planta_nombre}
+        </span>
+      </div>
+      <div className="p-5">
+        <h4 className="font-bold text-lg text-gray-800 line-clamp-1 mb-0.5">{planta.nombre_comun}</h4>
+        <p className="text-xs text-gray-400 italic mb-3 line-clamp-1">{planta.especie_cientifica || 'Sin especie asignada'}</p>
+        <p className="text-gray-600 text-sm line-clamp-2 mb-4 min-h-[2.5rem]">{planta.cuidados}</p>
+        <div className="flex justify-between items-center pt-3 border-t border-gray-100">
+          <span className="text-xl font-black bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+            ${parseFloat(planta.precio).toFixed(2)}
+          </span>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => onEditar(planta)}
+              className="p-2 bg-gray-100 text-gray-600 hover:bg-emerald-500 hover:text-white rounded-lg transition"
+              title="Editar"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => onEliminar(planta)}
+              className="p-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg transition"
+              title="Eliminar"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ✅ Componente separado para Lista de Planta
+function PlantaListItem({ planta, idx, onEditar, onEliminar }) {
+  const [imgError, setImgError] = useState(false);
+
+  return (
+    <div
+      className="flex items-center gap-4 p-4 hover:bg-emerald-50/30 transition group"
+      style={{ animation: `fadeInUp 0.3s ease-out ${idx * 0.03}s both` }}
+    >
+      <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-emerald-100 to-teal-100 overflow-hidden flex-shrink-0">
+        {planta.imagen && !imgError ? (
+          <img 
+            src={planta.imagen} 
+            alt={planta.nombre_comun} 
+            className="w-full h-full object-cover"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-2xl">🌿</div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <h4 className="font-bold text-gray-800 truncate">{planta.nombre_comun}</h4>
+        <p className="text-xs text-gray-400 italic truncate">{planta.especie_cientifica || 'Sin especie'}</p>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{planta.tipo_planta_nombre}</span>
+          <span className="text-xs text-gray-400 line-clamp-1">{planta.cuidados}</span>
+        </div>
+      </div>
+      <span className="text-lg font-black text-emerald-600 hidden sm:block">
+        ${parseFloat(planta.precio).toFixed(2)}
+      </span>
+      <div className="flex gap-1.5">
+        <button onClick={() => onEditar(planta)} className="p-2 bg-gray-100 text-gray-600 hover:bg-emerald-500 hover:text-white rounded-lg transition">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
+        <button onClick={() => onEliminar(planta)} className="p-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg transition">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
+    </div>
   );
 }
 

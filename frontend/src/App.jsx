@@ -24,7 +24,7 @@ export default function App() {
   const [precio, setPrecio] = useState('');
   const [tipoPlantaSeleccionado, setTipoPlantaSeleccionado] = useState('');
   const [archivoImagen, setArchivoImagen] = useState(null);
-  const [previewImagen, setPreviewImagen] = useState(null);
+
 
   // ========================================
   // ESTADOS FORMULARIO TIPO
@@ -133,36 +133,41 @@ export default function App() {
     }
   };
 
-  const guardarPlanta = async (e) => {
+const guardarPlanta = async (e) => {
   e.preventDefault();
-  const formData = new FormData();
   
-  formData.append('nombre_comun', nombreComun.trim());
-  formData.append('cuidados', cuidados.trim());
-  formData.append('precio', precio);
-  formData.append('tipo_planta', tipoPlantaSeleccionado);
+  // 1. Creamos un objeto JSON limpio en lugar de FormData
+  const payload = {
+    nombre_comun: nombreComun.trim(),
+    cuidados: cuidados.trim(),
+    precio: parseFloat(precio), // Aseguramos que viaje como número
+    tipo_planta: parseInt(tipoPlantaSeleccionado), // Aseguramos que viaje como entero
+    imagen: previewImagen.trim() // <-- Aquí guardas la URL de internet (ej: https://...)
+  };
   
   if (especieCientifica && especieCientifica.trim() !== '') {
-    formData.append('especie_cientifica', especieCientifica.trim());
-  }
-
-  // Solo adjuntamos la imagen si el usuario seleccionó un archivo nuevo
-  if (archivoImagen) {
-    formData.append('imagen', archivoImagen);
+    payload.especie_cientifica = especieCientifica.trim();
   }
 
   const url = idPlantaEditar
     ? `https://catalogo-plantas-backend.onrender.com/api/plantas/${idPlantaEditar}/`
     : 'https://catalogo-plantas-backend.onrender.com/api/plantas/';
     
-  // CAMBIO CLAVE: Usamos PATCH en lugar de PUT para la actualización con FormData
   const method = idPlantaEditar ? 'PATCH' : 'POST';
 
   try {
-    const res = await fetch(url, { method, body: formData });
+    // 2. Modificamos el Fetch para enviar JSON con sus respectivos Headers
+    const res = await fetch(url, { 
+      method, 
+      headers: {
+        'Content-Type': 'application/json' // Le avisa al backend que va un JSON
+      },
+      body: JSON.stringify(payload) // Convertimos el objeto a texto string
+    });
+
     if (res.ok) {
       setMostrarModalPlanta(false);
-      cargarDatos(); // Asegúrate de que esta función exista en tu App.jsx o cámbiala por cargarPlantas()
+      cargarDatos(); 
       mostrarNotificacion(
         idPlantaEditar ? 'Planta actualizada correctamente' : 'Planta creada correctamente',
         'exito'
@@ -170,7 +175,6 @@ export default function App() {
     } else {
       const errores = await res.json();
       
-      // Mapeamos los errores para que la notificación te diga exactamente qué campo falló (ej: "precio: Este campo es requerido")
       const mensajeError = Object.entries(errores)
         .map(([campo, mensajes]) => `${campo}: ${Array.isArray(mensajes) ? mensajes.join(', ') : mensajes}`)
         .join(' | ');
@@ -793,46 +797,46 @@ export default function App() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">
-                  Imagen
-                </label>
-                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 hover:border-emerald-400 transition">
-                  {previewImagen ? (
-                    <div className="relative">
-                      <img
-                        src={previewImagen}
-                        alt="Preview"
-                        className="w-full h-40 object-cover rounded-lg"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setArchivoImagen(null);
-                          setPreviewImagen(null);
-                        }}
-                        className="absolute top-2 right-2 bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center hover:bg-red-600 transition shadow-lg"
-                      >
-                        ✕
-                      </button>
+                                  <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">
+                        URL de la Imagen
+                      </label>
+                      
+                      <div className="flex flex-col gap-3">
+                        {/* Input de texto para pegar el enlace de internet */}
+                        <input
+                          type="text"
+                          placeholder="Pega el enlace de la imagen (Ej: https://images.unsplash.com/...)"
+                          value={previewImagen || ''} // Si es null, usa un string vacío
+                          onChange={(e) => setPreviewImagen(e.target.value)}
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition shadow-sm"
+                        />
+
+                        {/* Si hay una URL escrita, muestra la vista previa con el botón de borrar */}
+                        {previewImagen && (
+                          <div className="border border-gray-100 rounded-xl p-2 bg-gray-50">
+                            <div className="relative">
+                              <img
+                                src={previewImagen}
+                                alt="Preview"
+                                className="w-full h-40 object-cover rounded-lg"
+                                onError={(e) => {
+                                  // Evita el ícono de imagen rota si la URL no es válida
+                                  e.target.src = 'https://placehold.co/600x400/f3f4f6/9ca3af?text=Enlace+de+imagen+no+valido';
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setPreviewImagen('')} // Limpia el campo de texto
+                                className="absolute top-2 right-2 bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center hover:bg-red-600 transition shadow-lg text-xs font-bold"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <label className="cursor-pointer flex flex-col items-center justify-center py-6 text-gray-400 hover:text-emerald-600 transition">
-                      <svg className="w-10 h-10 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <span className="text-sm font-medium">Click para subir imagen</span>
-                      <span className="text-xs mt-1">PNG, JPG hasta 5MB</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={manejarCambioImagen}
-                        className="hidden"
-                      />
-                    </label>
-                  )}
-                </div>
-              </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
                 <button

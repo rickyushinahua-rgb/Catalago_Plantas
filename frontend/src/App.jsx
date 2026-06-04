@@ -23,8 +23,7 @@ export default function App() {
   const [cuidados, setCuidados] = useState('');
   const [precio, setPrecio] = useState('');
   const [tipoPlantaSeleccionado, setTipoPlantaSeleccionado] = useState('');
-  const [archivoImagen, setArchivoImagen] = useState(null);
-
+  const [previewImagen, setPreviewImagen] = useState('');
 
   // ========================================
   // ESTADOS FORMULARIO TIPO
@@ -34,6 +33,9 @@ export default function App() {
   const [descripcionTipo, setDescripcionTipo] = useState('');
   const [codigoCategoria, setCodigoCategoria] = useState('');
 
+  // ========================================
+  // ESTADOS MODALES
+  // ========================================
   const [mostrarModalPlanta, setMostrarModalPlanta] = useState(false);
   const [mostrarModalTipo, setMostrarModalTipo] = useState(false);
   const [modalConfirmar, setModalConfirmar] = useState(null);
@@ -45,7 +47,6 @@ export default function App() {
     cargarDatos();
   }, []);
 
-  // Auto-cerrar notificación
   useEffect(() => {
     if (notificacion) {
       const timer = setTimeout(() => setNotificacion(null), 3500);
@@ -96,7 +97,7 @@ export default function App() {
     const totalPlantas = plantas.length;
     const totalTipos = tiposPlanta.length;
     const valorInventario = plantas.reduce((acc, p) => acc + parseFloat(p.precio || 0), 0);
-    const tipoMasUsado = tiposPlanta.sort((a, b) => (b.total_plantas || 0) - (a.total_plantas || 0))[0];
+    const tipoMasUsado = [...tiposPlanta].sort((a, b) => (b.total_plantas || 0) - (a.total_plantas || 0))[0];
     return { totalPlantas, totalTipos, valorInventario, tipoMasUsado };
   }, [plantas, tiposPlanta]);
 
@@ -111,7 +112,7 @@ export default function App() {
       setCuidados(planta.cuidados);
       setPrecio(planta.precio);
       setTipoPlantaSeleccionado(planta.tipo_planta);
-      setPreviewImagen(planta.imagen || null);
+      setPreviewImagen(planta.imagen || '');
     } else {
       setIdPlantaEditar(null);
       setNombreComun('');
@@ -119,72 +120,59 @@ export default function App() {
       setCuidados('');
       setPrecio('');
       setTipoPlantaSeleccionado(tiposPlanta[0]?.id || '');
-      setPreviewImagen(null);
+      setPreviewImagen('');
     }
-    setArchivoImagen(null);
     setMostrarModalPlanta(true);
   };
 
-  const manejarCambioImagen = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setArchivoImagen(file);
-      setPreviewImagen(URL.createObjectURL(file));
+  const guardarPlanta = async (e) => {
+    e.preventDefault();
+
+    const payload = {
+      nombre_comun: nombreComun.trim(),
+      cuidados: cuidados.trim(),
+      precio: parseFloat(precio),
+      tipo_planta: parseInt(tipoPlantaSeleccionado),
+      imagen: previewImagen.trim() || null,
+    };
+
+    if (especieCientifica && especieCientifica.trim() !== '') {
+      payload.especie_cientifica = especieCientifica.trim();
+    }
+
+    const url = idPlantaEditar
+      ? `https://catalogo-plantas-backend.onrender.com/api/plantas/${idPlantaEditar}/`
+      : 'https://catalogo-plantas-backend.onrender.com/api/plantas/';
+
+    const method = idPlantaEditar ? 'PATCH' : 'POST';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        setMostrarModalPlanta(false);
+        cargarDatos();
+        mostrarNotificacion(
+          idPlantaEditar ? 'Planta actualizada correctamente' : 'Planta creada correctamente',
+          'exito'
+        );
+      } else {
+        const errores = await res.json();
+        const mensajeError = Object.entries(errores)
+          .map(([campo, mensajes]) => `${campo}: ${Array.isArray(mensajes) ? mensajes.join(', ') : mensajes}`)
+          .join(' | ');
+        mostrarNotificacion(mensajeError || 'Error al guardar', 'error');
+      }
+    } catch (err) {
+      mostrarNotificacion('Error de conexión con el servidor', 'error');
     }
   };
-
-const guardarPlanta = async (e) => {
-  e.preventDefault();
-  
-  // 1. Creamos un objeto JSON limpio en lugar de FormData
-  const payload = {
-    nombre_comun: nombreComun.trim(),
-    cuidados: cuidados.trim(),
-    precio: parseFloat(precio), // Aseguramos que viaje como número
-    tipo_planta: parseInt(tipoPlantaSeleccionado), // Aseguramos que viaje como entero
-    imagen: previewImagen.trim() // <-- Aquí guardas la URL de internet (ej: https://...)
-  };
-  
-  if (especieCientifica && especieCientifica.trim() !== '') {
-    payload.especie_cientifica = especieCientifica.trim();
-  }
-
-  const url = idPlantaEditar
-    ? `https://catalogo-plantas-backend.onrender.com/api/plantas/${idPlantaEditar}/`
-    : 'https://catalogo-plantas-backend.onrender.com/api/plantas/';
-    
-  const method = idPlantaEditar ? 'PATCH' : 'POST';
-
-  try {
-    // 2. Modificamos el Fetch para enviar JSON con sus respectivos Headers
-    const res = await fetch(url, { 
-      method, 
-      headers: {
-        'Content-Type': 'application/json' // Le avisa al backend que va un JSON
-      },
-      body: JSON.stringify(payload) // Convertimos el objeto a texto string
-    });
-
-    if (res.ok) {
-      setMostrarModalPlanta(false);
-      cargarDatos(); 
-      mostrarNotificacion(
-        idPlantaEditar ? 'Planta actualizada correctamente' : 'Planta creada correctamente',
-        'exito'
-      );
-    } else {
-      const errores = await res.json();
-      
-      const mensajeError = Object.entries(errores)
-        .map(([campo, mensajes]) => `${campo}: ${Array.isArray(mensajes) ? mensajes.join(', ') : mensajes}`)
-        .join(' | ');
-
-      mostrarNotificacion(mensajeError || 'Error al guardar', 'error');
-    }
-  } catch (err) {
-    mostrarNotificacion('Error de conexión con el servidor', 'error');
-  }
-};
 
   const solicitarEliminarPlanta = (planta) => {
     setModalConfirmar({
@@ -293,9 +281,7 @@ const guardarPlanta = async (e) => {
   // ========================================
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 flex font-sans">
-      {/* ========================================
-          OVERLAY MÓVIL
-      ======================================== */}
+      {/* OVERLAY MÓVIL */}
       {sidebarAbierto && (
         <div
           className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 md:hidden"
@@ -303,15 +289,12 @@ const guardarPlanta = async (e) => {
         />
       )}
 
-      {/* ========================================
-          SIDEBAR
-      ======================================== */}
+      {/* SIDEBAR */}
       <aside
         className={`fixed md:sticky top-0 left-0 h-screen w-72 bg-gradient-to-b from-emerald-900 via-emerald-800 to-teal-900 text-white p-6 z-40 transform transition-transform duration-300 ease-out ${
           sidebarAbierto ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         } shadow-2xl md:shadow-lg flex flex-col`}
       >
-        {/* Logo */}
         <div className="flex items-center justify-between mb-10">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-xl flex items-center justify-center text-2xl shadow-lg">
@@ -330,7 +313,6 @@ const guardarPlanta = async (e) => {
           </button>
         </div>
 
-        {/* Navegación */}
         <nav className="space-y-2 flex-1">
           <p className="text-xs uppercase text-emerald-400 font-semibold tracking-wider mb-3 px-3">
             Menú Principal
@@ -371,7 +353,6 @@ const guardarPlanta = async (e) => {
           </button>
         </nav>
 
-        {/* Footer sidebar */}
         <div className="mt-auto pt-6 border-t border-white/10">
           <div className="bg-white/5 rounded-xl p-4 backdrop-blur-sm">
             <p className="text-xs text-emerald-300 mb-1">Sistema activo</p>
@@ -380,11 +361,8 @@ const guardarPlanta = async (e) => {
         </div>
       </aside>
 
-      {/* ========================================
-          CONTENIDO PRINCIPAL
-      ======================================== */}
+      {/* CONTENIDO PRINCIPAL */}
       <main className="flex-1 p-4 sm:p-6 lg:p-10 min-w-0">
-        {/* Header con botón hamburguesa móvil */}
         <header className="flex justify-between items-center mb-6 md:mb-8 gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -416,55 +394,20 @@ const guardarPlanta = async (e) => {
           </button>
         </header>
 
-        {/* ========================================
-            VISTA: PLANTAS
-        ======================================== */}
+        {/* VISTA: PLANTAS */}
         {vistaActual === 'plantas' && (
           <>
-            {/* Estadísticas */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
-              <StatCard
-                icon="🌿"
-                label="Total Plantas"
-                value={estadisticas.totalPlantas}
-                color="emerald"
-              />
-              <StatCard
-                icon="📂"
-                label="Categorías"
-                value={estadisticas.totalTipos}
-                color="teal"
-              />
-              <StatCard
-                icon="💰"
-                label="Valor Inventario"
-                value={`$${estadisticas.valorInventario.toFixed(2)}`}
-                color="amber"
-              />
-              <StatCard
-                icon="⭐"
-                label="Más Popular"
-                value={estadisticas.tipoMasUsado?.nombre || '—'}
-                color="rose"
-                small
-              />
+              <StatCard icon="🌿" label="Total Plantas" value={estadisticas.totalPlantas} color="emerald" />
+              <StatCard icon="📂" label="Categorías" value={estadisticas.totalTipos} color="teal" />
+              <StatCard icon="💰" label="Valor Inventario" value={`$${estadisticas.valorInventario.toFixed(2)}`} color="amber" />
+              <StatCard icon="⭐" label="Más Popular" value={estadisticas.tipoMasUsado?.nombre || '—'} color="rose" small />
             </div>
 
-            {/* Barra de búsqueda y filtros */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4 mb-6 flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
-                <svg
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input
                   type="text"
@@ -481,17 +424,13 @@ const guardarPlanta = async (e) => {
               >
                 <option value="todos">Todas las categorías</option>
                 {tiposPlanta.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.nombre}
-                  </option>
+                  <option key={t.id} value={t.id}>{t.nombre}</option>
                 ))}
               </select>
               <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
                 <button
                   onClick={() => setVistaGrid(true)}
-                  className={`p-2 rounded-lg transition ${
-                    vistaGrid ? 'bg-white shadow-sm text-emerald-700' : 'text-gray-500 hover:text-gray-700'
-                  }`}
+                  className={`p-2 rounded-lg transition ${vistaGrid ? 'bg-white shadow-sm text-emerald-700' : 'text-gray-500 hover:text-gray-700'}`}
                   title="Vista cuadrícula"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -500,9 +439,7 @@ const guardarPlanta = async (e) => {
                 </button>
                 <button
                   onClick={() => setVistaGrid(false)}
-                  className={`p-2 rounded-lg transition ${
-                    !vistaGrid ? 'bg-white shadow-sm text-emerald-700' : 'text-gray-500 hover:text-gray-700'
-                  }`}
+                  className={`p-2 rounded-lg transition ${!vistaGrid ? 'bg-white shadow-sm text-emerald-700' : 'text-gray-500 hover:text-gray-700'}`}
                   title="Vista lista"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -511,6 +448,7 @@ const guardarPlanta = async (e) => {
                 </button>
               </div>
             </div>
+
             {cargando ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {[...Array(6)].map((_, i) => (
@@ -525,18 +463,13 @@ const guardarPlanta = async (e) => {
                 ))}
               </div>
             ) : plantasFiltradas.length === 0 ? (
-              /* Empty state */
               <div className="bg-white rounded-2xl shadow-sm border border-dashed border-gray-200 p-12 text-center">
                 <div className="text-6xl mb-4">🌱</div>
                 <h3 className="text-lg font-bold text-gray-800 mb-2">
-                  {busqueda || filtroTipo !== 'todos'
-                    ? 'No se encontraron resultados'
-                    : 'Aún no hay plantas'}
+                  {busqueda || filtroTipo !== 'todos' ? 'No se encontraron resultados' : 'Aún no hay plantas'}
                 </h3>
                 <p className="text-gray-500 text-sm mb-6">
-                  {busqueda || filtroTipo !== 'todos'
-                    ? 'Intenta con otros términos de búsqueda'
-                    : 'Comienza agregando tu primera planta al catálogo'}
+                  {busqueda || filtroTipo !== 'todos' ? 'Intenta con otros términos de búsqueda' : 'Comienza agregando tu primera planta al catálogo'}
                 </p>
                 {!busqueda && filtroTipo === 'todos' && (
                   <button
@@ -548,7 +481,6 @@ const guardarPlanta = async (e) => {
                 )}
               </div>
             ) : vistaGrid ? (
-              /* Vista GRID */
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {plantasFiltradas.map((planta, idx) => (
                   <div
@@ -564,9 +496,7 @@ const guardarPlanta = async (e) => {
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-emerald-300 text-6xl">
-                          🌿
-                        </div>
+                        <div className="w-full h-full flex items-center justify-center text-emerald-300 text-6xl">🌿</div>
                       )}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                       <span className="absolute top-3 left-3 bg-white/95 backdrop-blur text-emerald-800 font-semibold text-xs px-3 py-1 rounded-full shadow-sm flex items-center gap-1">
@@ -575,15 +505,9 @@ const guardarPlanta = async (e) => {
                       </span>
                     </div>
                     <div className="p-5">
-                      <h4 className="font-bold text-lg text-gray-800 line-clamp-1 mb-0.5">
-                        {planta.nombre_comun}
-                      </h4>
-                      <p className="text-xs text-gray-400 italic mb-3 line-clamp-1">
-                        {planta.especie_cientifica || 'Sin especie asignada'}
-                      </p>
-                      <p className="text-gray-600 text-sm line-clamp-2 mb-4 min-h-[2.5rem]">
-                        {planta.cuidados}
-                      </p>
+                      <h4 className="font-bold text-lg text-gray-800 line-clamp-1 mb-0.5">{planta.nombre_comun}</h4>
+                      <p className="text-xs text-gray-400 italic mb-3 line-clamp-1">{planta.especie_cientifica || 'Sin especie asignada'}</p>
+                      <p className="text-gray-600 text-sm line-clamp-2 mb-4 min-h-[2.5rem]">{planta.cuidados}</p>
                       <div className="flex justify-between items-center pt-3 border-t border-gray-100">
                         <span className="text-xl font-black bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
                           ${parseFloat(planta.precio).toFixed(2)}
@@ -614,7 +538,6 @@ const guardarPlanta = async (e) => {
                 ))}
               </div>
             ) : (
-              /* Vista LISTA */
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="divide-y divide-gray-100">
                   {plantasFiltradas.map((planta, idx) => (
@@ -632,13 +555,9 @@ const guardarPlanta = async (e) => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <h4 className="font-bold text-gray-800 truncate">{planta.nombre_comun}</h4>
-                        <p className="text-xs text-gray-400 italic truncate">
-                          {planta.especie_cientifica || 'Sin especie'}
-                        </p>
+                        <p className="text-xs text-gray-400 italic truncate">{planta.especie_cientifica || 'Sin especie'}</p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                            {planta.tipo_planta_nombre}
-                          </span>
+                          <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{planta.tipo_planta_nombre}</span>
                           <span className="text-xs text-gray-400 line-clamp-1">{planta.cuidados}</span>
                         </div>
                       </div>
@@ -646,18 +565,12 @@ const guardarPlanta = async (e) => {
                         ${parseFloat(planta.precio).toFixed(2)}
                       </span>
                       <div className="flex gap-1.5">
-                        <button
-                          onClick={() => abrirFormularioPlanta(planta)}
-                          className="p-2 bg-gray-100 text-gray-600 hover:bg-emerald-500 hover:text-white rounded-lg transition"
-                        >
+                        <button onClick={() => abrirFormularioPlanta(planta)} className="p-2 bg-gray-100 text-gray-600 hover:bg-emerald-500 hover:text-white rounded-lg transition">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         </button>
-                        <button
-                          onClick={() => solicitarEliminarPlanta(planta)}
-                          className="p-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg transition"
-                        >
+                        <button onClick={() => solicitarEliminarPlanta(planta)} className="p-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg transition">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
@@ -671,6 +584,7 @@ const guardarPlanta = async (e) => {
           </>
         )}
 
+        {/* VISTA: TIPOS */}
         {vistaActual === 'tipos' && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="overflow-x-auto">
@@ -686,11 +600,7 @@ const guardarPlanta = async (e) => {
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-gray-700 text-sm">
                   {tiposPlanta.map((tipo, idx) => (
-                    <tr
-                      key={tipo.id}
-                      className="hover:bg-emerald-50/30 transition"
-                      style={{ animation: `fadeInUp 0.3s ease-out ${idx * 0.05}s both` }}
-                    >
+                    <tr key={tipo.id} className="hover:bg-emerald-50/30 transition" style={{ animation: `fadeInUp 0.3s ease-out ${idx * 0.05}s both` }}>
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-sm">
@@ -700,32 +610,20 @@ const guardarPlanta = async (e) => {
                         </div>
                       </td>
                       <td className="p-4 hidden sm:table-cell">
-                        <span className="bg-gray-100 px-2.5 py-1 rounded-lg font-mono text-xs text-gray-600">
-                          {tipo.codigo_categoria || '—'}
-                        </span>
+                        <span className="bg-gray-100 px-2.5 py-1 rounded-lg font-mono text-xs text-gray-600">{tipo.codigo_categoria || '—'}</span>
                       </td>
-                      <td className="p-4 max-w-xs truncate hidden md:table-cell text-gray-500">
-                        {tipo.descripcion || 'Sin descripción'}
-                      </td>
+                      <td className="p-4 max-w-xs truncate hidden md:table-cell text-gray-500">{tipo.descripcion || 'Sin descripción'}</td>
                       <td className="p-4 text-center">
-                        <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 font-bold text-xs px-2.5 py-1 rounded-full">
-                          {tipo.total_plantas}
-                        </span>
+                        <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 font-bold text-xs px-2.5 py-1 rounded-full">{tipo.total_plantas}</span>
                       </td>
                       <td className="p-4">
                         <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => abrirFormularioTipo(tipo)}
-                            className="p-2 bg-gray-100 text-gray-600 hover:bg-emerald-500 hover:text-white rounded-lg transition"
-                          >
+                          <button onClick={() => abrirFormularioTipo(tipo)} className="p-2 bg-gray-100 text-gray-600 hover:bg-emerald-500 hover:text-white rounded-lg transition">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
                           </button>
-                          <button
-                            onClick={() => solicitarEliminarTipo(tipo)}
-                            className="p-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg transition"
-                          >
+                          <button onClick={() => solicitarEliminarTipo(tipo)} className="p-2 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white rounded-lg transition">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
@@ -739,6 +637,8 @@ const guardarPlanta = async (e) => {
             </div>
           </div>
         )}
+
+        {/* MODAL PLANTA */}
         {mostrarModalPlanta && (
           <Modal onClose={() => setMostrarModalPlanta(false)}>
             <h3 className="text-xl font-bold text-gray-800 mb-1">
@@ -749,26 +649,11 @@ const guardarPlanta = async (e) => {
             </p>
             <form onSubmit={guardarPlanta} className="space-y-4">
               <Input label="Nombre Común *" value={nombreComun} onChange={setNombreComun} required />
-              <Input
-                label="Especie Científica"
-                value={especieCientifica}
-                onChange={setEspecieCientifica}
-                placeholder="Ej: Monstera deliciosa"
-              />
+              <Input label="Especie Científica" value={especieCientifica} onChange={setEspecieCientifica} placeholder="Ej: Monstera deliciosa" />
               <div className="grid grid-cols-2 gap-3">
-                <Input
-                  label="Precio *"
-                  type="number"
-                  step="0.01"
-                  value={precio}
-                  onChange={setPrecio}
-                  required
-                  prefix="$"
-                />
+                <Input label="Precio *" type="number" step="0.01" value={precio} onChange={setPrecio} required prefix="$" />
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">
-                    Categoría *
-                  </label>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">Categoría *</label>
                   <select
                     value={tipoPlantaSeleccionado}
                     onChange={(e) => setTipoPlantaSeleccionado(e.target.value)}
@@ -776,17 +661,13 @@ const guardarPlanta = async (e) => {
                     required
                   >
                     {tiposPlanta.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.nombre}
-                      </option>
+                      <option key={t.id} value={t.id}>{t.nombre}</option>
                     ))}
                   </select>
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">
-                  Cuidados *
-                </label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">Cuidados *</label>
                 <textarea
                   required
                   rows="3"
@@ -797,59 +678,45 @@ const guardarPlanta = async (e) => {
                 />
               </div>
 
-                                  <div>
-                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">
-                        URL de la Imagen
-                      </label>
-                      
-                      <div className="flex flex-col gap-3">
-                        {/* Input de texto para pegar el enlace de internet */}
-                        <input
-                          type="text"
-                          placeholder="Pega el enlace de la imagen (Ej: https://images.unsplash.com/...)"
-                          value={previewImagen || ''} // Si es null, usa un string vacío
-                          onChange={(e) => setPreviewImagen(e.target.value)}
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition shadow-sm"
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">URL de la Imagen</label>
+                <div className="flex flex-col gap-3">
+                  <input
+                    type="text"
+                    placeholder="Pega el enlace de la imagen (Ej: https://images.unsplash.com/...)"
+                    value={previewImagen}
+                    onChange={(e) => setPreviewImagen(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition shadow-sm"
+                  />
+                  {previewImagen && (
+                    <div className="border border-gray-100 rounded-xl p-2 bg-gray-50">
+                      <div className="relative">
+                        <img
+                          src={previewImagen}
+                          alt="Preview"
+                          className="w-full h-40 object-cover rounded-lg"
+                          onError={(e) => {
+                            e.target.src = 'https://placehold.co/600x400/f3f4f6/9ca3af?text=Enlace+no+valido';
+                          }}
                         />
-
-                        {/* Si hay una URL escrita, muestra la vista previa con el botón de borrar */}
-                        {previewImagen && (
-                          <div className="border border-gray-100 rounded-xl p-2 bg-gray-50">
-                            <div className="relative">
-                              <img
-                                src={previewImagen}
-                                alt="Preview"
-                                className="w-full h-40 object-cover rounded-lg"
-                                onError={(e) => {
-                                  // Evita el ícono de imagen rota si la URL no es válida
-                                  e.target.src = 'https://placehold.co/600x400/f3f4f6/9ca3af?text=Enlace+de+imagen+no+valido';
-                                }}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setPreviewImagen('')} // Limpia el campo de texto
-                                className="absolute top-2 right-2 bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center hover:bg-red-600 transition shadow-lg text-xs font-bold"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImagen('')}
+                          className="absolute top-2 right-2 bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center hover:bg-red-600 transition shadow-lg text-xs font-bold"
+                        >
+                          ✕
+                        </button>
                       </div>
                     </div>
+                  )}
+                </div>
+              </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setMostrarModalPlanta(false)}
-                  className="px-5 py-2.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition"
-                >
+                <button type="button" onClick={() => setMostrarModalPlanta(false)} className="px-5 py-2.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition">
                   Cancelar
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-medium rounded-xl shadow-lg shadow-emerald-500/30 transition"
-                >
+                <button type="submit" className="px-5 py-2.5 text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-medium rounded-xl shadow-lg shadow-emerald-500/30 transition">
                   {idPlantaEditar ? 'Guardar cambios' : 'Crear planta'}
                 </button>
               </div>
@@ -857,6 +724,7 @@ const guardarPlanta = async (e) => {
           </Modal>
         )}
 
+        {/* MODAL TIPO */}
         {mostrarModalTipo && (
           <Modal onClose={() => setMostrarModalTipo(false)}>
             <h3 className="text-xl font-bold text-gray-800 mb-1">
@@ -867,16 +735,9 @@ const guardarPlanta = async (e) => {
             </p>
             <form onSubmit={guardarTipoPlanta} className="space-y-4">
               <Input label="Nombre del Tipo *" value={nombreTipo} onChange={setNombreTipo} required />
-              <Input
-                label="Código de Categoría"
-                value={codigoCategoria}
-                onChange={setCodigoCategoria}
-                placeholder="Ej: TROP-01"
-              />
+              <Input label="Código de Categoría" value={codigoCategoria} onChange={setCodigoCategoria} placeholder="Ej: TROP-01" />
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">
-                  Descripción
-                </label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">Descripción</label>
                 <textarea
                   rows="3"
                   value={descripcionTipo}
@@ -886,17 +747,10 @@ const guardarPlanta = async (e) => {
                 />
               </div>
               <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setMostrarModalTipo(false)}
-                  className="px-5 py-2.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition"
-                >
+                <button type="button" onClick={() => setMostrarModalTipo(false)} className="px-5 py-2.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition">
                   Cancelar
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-medium rounded-xl shadow-lg shadow-emerald-500/30 transition"
-                >
+                <button type="submit" className="px-5 py-2.5 text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-medium rounded-xl shadow-lg shadow-emerald-500/30 transition">
                   {idTipoEditar ? 'Guardar cambios' : 'Crear tipo'}
                 </button>
               </div>
@@ -904,6 +758,7 @@ const guardarPlanta = async (e) => {
           </Modal>
         )}
 
+        {/* MODAL CONFIRMAR */}
         {modalConfirmar && (
           <Modal onClose={() => setModalConfirmar(null)} small>
             <div className="text-center">
@@ -915,16 +770,10 @@ const guardarPlanta = async (e) => {
               <h3 className="text-xl font-bold text-gray-800 mb-2">{modalConfirmar.titulo}</h3>
               <p className="text-gray-600 text-sm mb-6">{modalConfirmar.mensaje}</p>
               <div className="flex gap-2 justify-center">
-                <button
-                  onClick={() => setModalConfirmar(null)}
-                  className="px-5 py-2.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition"
-                >
+                <button onClick={() => setModalConfirmar(null)} className="px-5 py-2.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition">
                   Cancelar
                 </button>
-                <button
-                  onClick={modalConfirmar.onConfirmar}
-                  className="px-5 py-2.5 text-sm bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl shadow-lg shadow-red-500/30 transition"
-                >
+                <button onClick={modalConfirmar.onConfirmar} className="px-5 py-2.5 text-sm bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl shadow-lg shadow-red-500/30 transition">
                   Sí, eliminar
                 </button>
               </div>
@@ -933,12 +782,11 @@ const guardarPlanta = async (e) => {
         )}
       </main>
 
+      {/* NOTIFICACIÓN */}
       {notificacion && (
         <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl backdrop-blur-sm border animate-slideInRight ${
-            notificacion.tipo === 'exito'
-              ? 'bg-emerald-500/95 border-emerald-400 text-white'
-              : 'bg-red-500/95 border-red-400 text-white'
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl backdrop-blur-sm border ${
+            notificacion.tipo === 'exito' ? 'bg-emerald-500/95 border-emerald-400 text-white' : 'bg-red-500/95 border-red-400 text-white'
           }`}
           style={{ animation: 'slideInRight 0.3s ease-out' }}
         >
@@ -949,40 +797,21 @@ const guardarPlanta = async (e) => {
 
       <style>{`
         @keyframes fadeInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
         }
         @keyframes slideInRight {
-          from {
-            opacity: 0;
-            transform: translateX(100%);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
+          from { opacity: 0; transform: translateX(100%); }
+          to { opacity: 1; transform: translateX(0); }
         }
         @keyframes modalIn {
-          from {
-            opacity: 0;
-            transform: scale(0.95);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </div>
   );
 }
-
 
 function StatCard({ icon, label, value, color, small }) {
   const colors = {
@@ -994,35 +823,25 @@ function StatCard({ icon, label, value, color, small }) {
   return (
     <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-gray-100 hover:shadow-md transition group">
       <div className="flex items-start justify-between mb-3">
-        <div
-          className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-br ${colors[color]} shadow-lg flex items-center justify-center text-xl group-hover:scale-110 transition`}
-        >
+        <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-br ${colors[color]} shadow-lg flex items-center justify-center text-xl group-hover:scale-110 transition`}>
           {icon}
         </div>
       </div>
       <p className="text-xs text-gray-500 font-medium mb-1">{label}</p>
-      <p className={`font-bold text-gray-800 ${small ? 'text-base sm:text-lg' : 'text-xl sm:text-2xl'} truncate`}>
-        {value}
-      </p>
+      <p className={`font-bold text-gray-800 ${small ? 'text-base sm:text-lg' : 'text-xl sm:text-2xl'} truncate`}>{value}</p>
     </div>
   );
 }
 
 function Modal({ children, onClose, small }) {
   return (
-    <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div
         className={`bg-white rounded-2xl w-full ${small ? 'max-w-sm' : 'max-w-md'} p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto`}
         style={{ animation: 'modalIn 0.25s ease-out' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition"
-        >
+        <button onClick={onClose} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition">
           ✕
         </button>
         {children}
@@ -1037,9 +856,7 @@ function Input({ label, value, onChange, type = 'text', required, placeholder, p
       <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">{label}</label>
       <div className="relative">
         {prefix && (
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">
-            {prefix}
-          </span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">{prefix}</span>
         )}
         <input
           type={type}
@@ -1048,9 +865,7 @@ function Input({ label, value, onChange, type = 'text', required, placeholder, p
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className={`w-full border border-gray-200 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition ${
-            prefix ? 'pl-7' : ''
-          }`}
+          className={`w-full border border-gray-200 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition ${prefix ? 'pl-7' : ''}`}
         />
       </div>
     </div>

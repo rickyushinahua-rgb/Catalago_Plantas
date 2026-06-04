@@ -24,6 +24,8 @@ export default function App() {
   const [precio, setPrecio] = useState('');
   const [tipoPlantaSeleccionado, setTipoPlantaSeleccionado] = useState('');
   const [previewImagen, setPreviewImagen] = useState('');
+  const [imagenCargada, setImagenCargada] = useState(false); // ✅ Nuevo: saber si cargó bien
+  const [imagenError, setImagenError] = useState(false); // ✅ Nuevo: saber si falló
 
   // ========================================
   // ESTADOS FORMULARIO TIPO
@@ -54,6 +56,12 @@ export default function App() {
     }
   }, [notificacion]);
 
+  // ✅ Resetear estados de imagen cuando cambia la URL
+  useEffect(() => {
+    setImagenCargada(false);
+    setImagenError(false);
+  }, [previewImagen]);
+
   const cargarDatos = async () => {
     setCargando(true);
     try {
@@ -75,6 +83,23 @@ export default function App() {
   // ========================================
   const mostrarNotificacion = (mensaje, tipo = 'exito') => {
     setNotificacion({ mensaje, tipo, id: Date.now() });
+  };
+
+  // ========================================
+  // PEGAR IMAGEN DESDE PORTAPAPELES
+  // ========================================
+  const pegarDesdePortapapeles = async () => {
+    try {
+      const texto = await navigator.clipboard.readText();
+      if (texto && (texto.startsWith('http://') || texto.startsWith('https://'))) {
+        setPreviewImagen(texto);
+        mostrarNotificacion('URL pegada correctamente', 'exito');
+      } else {
+        mostrarNotificacion('El portapapeles no contiene una URL válida', 'error');
+      }
+    } catch (err) {
+      mostrarNotificacion('No se pudo acceder al portapapeles', 'error');
+    }
   };
 
   // ========================================
@@ -122,6 +147,8 @@ export default function App() {
       setTipoPlantaSeleccionado(tiposPlanta[0]?.id || '');
       setPreviewImagen('');
     }
+    setImagenCargada(false);
+    setImagenError(false);
     setMostrarModalPlanta(true);
   };
 
@@ -494,6 +521,10 @@ export default function App() {
                           src={planta.imagen}
                           alt={planta.nombre_comun}
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center text-emerald-300 text-6xl">🌿</div>';
+                          }}
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-emerald-300 text-6xl">🌿</div>
@@ -678,38 +709,98 @@ export default function App() {
                 />
               </div>
 
+              {/* ✅ CAMPO DE IMAGEN MEJORADO */}
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">URL de la Imagen</label>
-                <div className="flex flex-col gap-3">
-                  <input
-                    type="text"
-                    placeholder="Pega el enlace de la imagen (Ej: https://images.unsplash.com/...)"
-                    value={previewImagen}
-                    onChange={(e) => setPreviewImagen(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition shadow-sm"
-                  />
-                  {previewImagen && (
-                    <div className="border border-gray-100 rounded-xl p-2 bg-gray-50">
-                      <div className="relative">
-                        <img
-                          src={previewImagen}
-                          alt="Preview"
-                          className="w-full h-40 object-cover rounded-lg"
-                          onError={(e) => {
-                            e.target.src = 'https://placehold.co/600x400/f3f4f6/9ca3af?text=Enlace+no+valido';
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setPreviewImagen('')}
-                          className="absolute top-2 right-2 bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center hover:bg-red-600 transition shadow-lg text-xs font-bold"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">
+                  🖼️ URL de la Imagen
+                </label>
+                
+                {/* Input con botón de pegar */}
+                <div className="flex gap-2 mb-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="url"
+                      placeholder="https://images.unsplash.com/..."
+                      value={previewImagen}
+                      onChange={(e) => setPreviewImagen(e.target.value)}
+                      className="w-full px-3 py-2.5 pr-10 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition shadow-sm"
+                    />
+                    {previewImagen && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewImagen('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition p-1"
+                        title="Limpiar"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={pegarDesdePortapapeles}
+                    className="px-3 py-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-xl transition flex items-center gap-1.5 text-sm font-medium whitespace-nowrap"
+                    title="Pegar desde portapapeles"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    <span className="hidden sm:inline">Pegar</span>
+                  </button>
                 </div>
+
+                {/* Estado de la imagen */}
+                {previewImagen && (
+                  <div className={`border rounded-xl p-3 ${
+                    imagenError 
+                      ? 'border-red-200 bg-red-50' 
+                      : imagenCargada 
+                        ? 'border-emerald-200 bg-emerald-50' 
+                        : 'border-gray-100 bg-gray-50'
+                  }`}>
+                    {!imagenError && !imagenCargada && (
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                        <span>Cargando imagen...</span>
+                      </div>
+                    )}
+                    
+                    {imagenError && (
+                      <div className="flex items-center gap-2 text-sm text-red-600">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>La URL no es válida o la imagen no se puede cargar</span>
+                      </div>
+                    )}
+                    
+                    {imagenCargada && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span>Imagen cargada correctamente</span>
+                        </div>
+                        <div className="relative">
+                          <img
+                            src={previewImagen}
+                            alt="Preview"
+                            className="w-full h-40 object-cover rounded-lg border border-emerald-200"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!previewImagen && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    💡 Pega una URL de imagen de Unsplash, Pixabay, Imgur, etc.
+                  </p>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
@@ -810,6 +901,19 @@ export default function App() {
         }
       `}</style>
     </div>
+  );
+}
+
+// ✅ Componente de imagen con manejo de carga
+function ImagenPreview({ src, onLoad, onError }) {
+  return (
+    <img
+      src={src}
+      alt="Preview"
+      onLoad={onLoad}
+      onError={onError}
+      style={{ display: 'none' }}
+    />
   );
 }
 

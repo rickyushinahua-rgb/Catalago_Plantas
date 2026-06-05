@@ -164,6 +164,9 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+# Necesario para que django-cloudinary-storage no falle en collectstatic
+STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+
 
 # ==========================
 # CLOUDINARY PARA IMÁGENES

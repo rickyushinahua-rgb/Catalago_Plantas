@@ -62,7 +62,6 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
 
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -165,10 +164,6 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-# IMPORTANTE:
-# Usamos CompressedStaticFilesStorage para evitar error de widgets.css en Render.
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
-
 
 # ==========================
 # CLOUDINARY PARA IMÁGENES
@@ -185,7 +180,7 @@ STORAGES = {
         "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
     },
 }
 

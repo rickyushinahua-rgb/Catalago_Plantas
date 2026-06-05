@@ -169,18 +169,34 @@ export default function App() {
   const guardarPlanta = async (e) => {
     e.preventDefault();
 
-    // Crear FormData para enviar archivo
-    const formData = new FormData();
-    formData.append('nombre_comun', nombreComun.trim());
-    formData.append('cuidados', cuidados.trim());
-    formData.append('precio', parseFloat(precio));
-    formData.append('tipo_planta', parseInt(tipoPlantaSeleccionado));
-
-    if (especieCientifica && especieCientifica.trim() !== '') {
-      formData.append('especie_cientifica', especieCientifica.trim());
+    if (!nombreComun.trim()) {
+      mostrarNotificacion('El nombre común es obligatorio', 'error');
+      return;
     }
 
-    // Solo agregar imagen si se seleccionó un archivo nuevo
+    if (!cuidados.trim()) {
+      mostrarNotificacion('Los cuidados son obligatorios', 'error');
+      return;
+    }
+
+    if (!precio || Number(precio) <= 0) {
+      mostrarNotificacion('El precio debe ser mayor a 0', 'error');
+      return;
+    }
+
+    if (!tipoPlantaSeleccionado) {
+      mostrarNotificacion('Debe seleccionar una categoría', 'error');
+      return;
+    }
+
+    const formData = new FormData();
+
+    formData.append('nombre_comun', nombreComun.trim());
+    formData.append('especie_cientifica', especieCientifica.trim());
+    formData.append('cuidados', cuidados.trim());
+    formData.append('precio', precio.toString());
+    formData.append('tipo_planta', tipoPlantaSeleccionado.toString());
+
     if (archivoImagen) {
       formData.append('imagen', archivoImagen);
     }
@@ -192,27 +208,58 @@ export default function App() {
     const method = idPlantaEditar ? 'PATCH' : 'POST';
 
     try {
-      // NO poner Content-Type, el navegador lo hace automáticamente con boundary
       const res = await fetch(url, {
-        method,
+        method: method,
         body: formData,
       });
 
+      const textoRespuesta = await res.text();
+
       if (res.ok) {
         setMostrarModalPlanta(false);
-        cargarDatos();
+        setIdPlantaEditar(null);
+        setNombreComun('');
+        setEspecieCientifica('');
+        setCuidados('');
+        setPrecio('');
+        setTipoPlantaSeleccionado(tiposPlanta[0]?.id || '');
+        setArchivoImagen(null);
+        setPreviewImagen(null);
+
+        await cargarDatos();
+
         mostrarNotificacion(
-          idPlantaEditar ? 'Planta actualizada correctamente' : 'Planta creada correctamente',
+          idPlantaEditar
+            ? 'Planta actualizada correctamente'
+            : 'Planta creada correctamente',
           'exito'
         );
-      } else {
-        const errores = await res.json();
-        const mensajeError = Object.entries(errores)
-          .map(([campo, mensajes]) => `${campo}: ${Array.isArray(mensajes) ? mensajes.join(', ') : mensajes}`)
-          .join(' | ');
-        mostrarNotificacion(mensajeError || 'Error al guardar', 'error');
+
+        return;
       }
+
+      console.error('Error del backend:', res.status, textoRespuesta);
+
+      let mensajeError = 'No se pudo guardar la planta';
+
+      try {
+        const errores = JSON.parse(textoRespuesta);
+        mensajeError = Object.entries(errores)
+          .map(([campo, mensajes]) => {
+            if (Array.isArray(mensajes)) {
+              return `${campo}: ${mensajes.join(', ')}`;
+            }
+            return `${campo}: ${mensajes}`;
+          })
+          .join(' | ');
+      } catch {
+        mensajeError = `Error ${res.status}: revisa consola`;
+      }
+
+      mostrarNotificacion(mensajeError, 'error');
+
     } catch (err) {
+      console.error('Error real de conexión:', err);
       mostrarNotificacion('Error de conexión con el servidor', 'error');
     }
   };
@@ -228,10 +275,10 @@ export default function App() {
 
   const eliminarPlanta = async (id) => {
     try {
-      const res = await fetch(`https://catalogo-plantas-backend.onrender.com/api/plantas/${id}/`, { 
-        method: 'DELETE' 
+      const res = await fetch(`https://catalogo-plantas-backend.onrender.com/api/plantas/${id}/`, {
+        method: 'DELETE'
       });
-      
+
       if (res.ok || res.status === 204) {
         cargarDatos();
         mostrarNotificacion('Planta eliminada', 'exito');
@@ -302,11 +349,10 @@ export default function App() {
   const solicitarEliminarTipo = (tipo) => {
     setModalConfirmar({
       titulo: 'Eliminar Tipo',
-      mensaje: `¿Eliminar "${tipo.nombre}"? ${
-        tipo.total_plantas > 0
+      mensaje: `¿Eliminar "${tipo.nombre}"? ${tipo.total_plantas > 0
           ? `Tiene ${tipo.total_plantas} plantas asociadas.`
           : 'Esta acción no se puede deshacer.'
-      }`,
+        }`,
       tipo: 'peligro',
       onConfirmar: () => eliminarTipoPlanta(tipo.id),
     });
@@ -314,8 +360,8 @@ export default function App() {
 
   const eliminarTipoPlanta = async (id) => {
     try {
-      const res = await fetch(`https://catalogo-plantas-backend.onrender.com/api/tipos-planta/${id}/`, { 
-        method: 'DELETE' 
+      const res = await fetch(`https://catalogo-plantas-backend.onrender.com/api/tipos-planta/${id}/`, {
+        method: 'DELETE'
       });
       if (res.ok || res.status === 204) {
         cargarDatos();
@@ -347,9 +393,8 @@ export default function App() {
 
       {/* SIDEBAR */}
       <aside
-        className={`fixed md:sticky top-0 left-0 h-screen w-72 bg-gradient-to-b from-emerald-900 via-emerald-800 to-teal-900 text-white p-6 z-40 transform transition-transform duration-300 ease-out ${
-          sidebarAbierto ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        } shadow-2xl md:shadow-lg flex flex-col`}
+        className={`fixed md:sticky top-0 left-0 h-screen w-72 bg-gradient-to-b from-emerald-900 via-emerald-800 to-teal-900 text-white p-6 z-40 transform transition-transform duration-300 ease-out ${sidebarAbierto ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+          } shadow-2xl md:shadow-lg flex flex-col`}
       >
         <div className="flex items-center justify-between mb-10">
           <div className="flex items-center gap-3">
@@ -378,11 +423,10 @@ export default function App() {
               setVistaActual('plantas');
               setSidebarAbierto(false);
             }}
-            className={`w-full text-left py-3 px-4 rounded-xl transition-all duration-200 font-medium flex items-center gap-3 group ${
-              vistaActual === 'plantas'
+            className={`w-full text-left py-3 px-4 rounded-xl transition-all duration-200 font-medium flex items-center gap-3 group ${vistaActual === 'plantas'
                 ? 'bg-white/15 shadow-lg backdrop-blur-sm border border-white/10'
                 : 'hover:bg-white/10 text-emerald-100'
-            }`}
+              }`}
           >
             <span className="text-xl">📋</span>
             <span>Catálogo de Plantas</span>
@@ -395,11 +439,10 @@ export default function App() {
               setVistaActual('tipos');
               setSidebarAbierto(false);
             }}
-            className={`w-full text-left py-3 px-4 rounded-xl transition-all duration-200 font-medium flex items-center gap-3 group ${
-              vistaActual === 'tipos'
+            className={`w-full text-left py-3 px-4 rounded-xl transition-all duration-200 font-medium flex items-center gap-3 group ${vistaActual === 'tipos'
                 ? 'bg-white/15 shadow-lg backdrop-blur-sm border border-white/10'
                 : 'hover:bg-white/10 text-emerald-100'
-            }`}
+              }`}
           >
             <span className="text-xl">🌱</span>
             <span>Tipos de Planta</span>
@@ -665,7 +708,7 @@ export default function App() {
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">
                   🖼️ Imagen de la Planta
                 </label>
-                
+
                 {/* Input file oculto */}
                 <input
                   type="file"
@@ -676,7 +719,7 @@ export default function App() {
                 />
 
                 {/* Área de drop / preview */}
-                <label 
+                <label
                   htmlFor="input-imagen"
                   className="block cursor-pointer border-2 border-dashed border-gray-300 hover:border-emerald-500 rounded-xl p-4 transition bg-gray-50 hover:bg-emerald-50/30"
                 >
@@ -702,7 +745,7 @@ export default function App() {
                         </button>
                       </div>
                       <p className="text-xs text-center text-gray-500">
-                        {archivoImagen 
+                        {archivoImagen
                           ? `📎 ${archivoImagen.name} (${(archivoImagen.size / 1024).toFixed(1)} KB)`
                           : '🖼️ Imagen actual (click para cambiar)'}
                       </p>
@@ -792,9 +835,8 @@ export default function App() {
       {/* NOTIFICACIÓN */}
       {notificacion && (
         <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl backdrop-blur-sm border ${
-            notificacion.tipo === 'exito' ? 'bg-emerald-500/95 border-emerald-400 text-white' : 'bg-red-500/95 border-red-400 text-white'
-          }`}
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl backdrop-blur-sm border ${notificacion.tipo === 'exito' ? 'bg-emerald-500/95 border-emerald-400 text-white' : 'bg-red-500/95 border-red-400 text-white'
+            }`}
           style={{ animation: 'slideInRight 0.3s ease-out' }}
         >
           <span className="text-xl">{notificacion.tipo === 'exito' ? '✓' : '✕'}</span>
@@ -893,9 +935,9 @@ function PlantaListItem({ planta, idx, onEditar, onEliminar }) {
     >
       <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-emerald-100 to-teal-100 overflow-hidden flex-shrink-0">
         {planta.imagen && !imgError ? (
-          <img 
-            src={planta.imagen} 
-            alt={planta.nombre_comun} 
+          <img
+            src={planta.imagen}
+            alt={planta.nombre_comun}
             className="w-full h-full object-cover"
             onError={() => setImgError(true)}
           />

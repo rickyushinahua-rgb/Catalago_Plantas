@@ -32,7 +32,7 @@ class Planta(models.Model):
     class Meta:
         ordering = ['nombre_comun']
         verbose_name = 'Planta'
-        verbose_name_plural = 'Plantas'
+        verbose_name_plural = 'Plantas' 
 
     def __str__(self):
         return self.nombre_comun
